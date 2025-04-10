@@ -8,7 +8,7 @@ import numpy as np
 import random
 
 st.set_page_config(layout="wide")
-st.title("🚦 Traffic Optimizer Assistant – Manual Simulation")
+st.title("🚦 Traffic Optimizer Assistant – Real Signal Phase + Timer")
 
 @st.cache_resource
 def load_graph():
@@ -16,28 +16,43 @@ def load_graph():
 
 G = load_graph()
 
-def get_major_road_lights(G):
+# ✅ Only 20 major signals to keep it fast
+@st.cache_data
+def get_top_signals(G, max_signals=20):
     major_types = {"primary", "secondary", "trunk", "motorway"}
-    lights = {}
+    signal_candidates = []
+
     for node in G.nodes:
         neighbors = list(G.neighbors(node))
         if len(neighbors) >= 4:
-            tags = []
+            types = []
             for nbr in neighbors:
-                data = G.get_edge_data(node, nbr)
-                for key in data:
-                    edge = data[key]
-                    if 'highway' in edge:
-                        hw = edge['highway']
-                        tags += hw if isinstance(hw, list) else [hw]
-            if any(tag in major_types for tag in tags):
-                y, x = G.nodes[node]['y'], G.nodes[node]['x']
-                lights[(y, x)] = {
-                    "timer": random.randint(0, 59),
-                    "green_start": 35,
-                    "green_end": 59
-                }
-    return lights
+                edge_data = G.get_edge_data(node, nbr)
+                for key in edge_data:
+                    edge = edge_data[key]
+                    if "highway" in edge:
+                        hw = edge["highway"]
+                        types += hw if isinstance(hw, list) else [hw]
+            if any(t in major_types for t in types):
+                signal_candidates.append(node)
+
+    # Pick 20 most central nodes
+    center_nodes = list(nx.closeness_centrality(G).items())
+    center_nodes.sort(key=lambda x: x[1], reverse=True)
+    signals = {}
+    count = 0
+    for node, _ in center_nodes:
+        if node in signal_candidates:
+            y, x = G.nodes[node]['y'], G.nodes[node]['x']
+            signals[(y, x)] = {
+                "timer": random.randint(0, 59),
+                "green_start": 35,
+                "green_end": 59
+            }
+            count += 1
+            if count >= max_signals:
+                break
+    return signals
 
 def interpolate_points(p1, p2, spacing=15):
     distance = geodesic(p1, p2).meters
@@ -48,21 +63,30 @@ def interpolate_points(p1, p2, spacing=15):
     lons = np.linspace(p1[1], p2[1], num=num_points)
     return list(zip(lats, lons))
 
-# Reset state
+def get_nearest_light(pos, lights, threshold=80):
+    nearest = None
+    min_dist = float('inf')
+    for loc in lights:
+        dist = geodesic(pos, loc).meters
+        if dist < threshold and dist < min_dist:
+            nearest = loc
+            min_dist = dist
+    return nearest, min_dist if nearest else None
+
+# 🔁 Reset
 if st.button("🔁 Reset"):
-    for k in list(st.session_state.keys()):
-        del st.session_state[k]
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
     st.experimental_rerun()
 
-# Click-to-set route
+# 🗺️ Set route
 if "clicks" not in st.session_state:
     st.session_state.clicks = []
     st.session_state.start = None
     st.session_state.end = None
 
-st.markdown("### 🗺️ Click to Set Start and Destination")
+st.markdown("### 🗺️ Click to Set Start & Destination")
 m = folium.Map(location=[30.73, 76.77], zoom_start=14)
-
 if st.session_state.start:
     folium.Marker(st.session_state.start, icon=folium.Icon(color="green")).add_to(m)
 if st.session_state.end:
@@ -78,7 +102,7 @@ if map_data and map_data.get("last_clicked"):
         elif len(st.session_state.clicks) == 2:
             st.session_state.end = coord
 
-# Generate route
+# 🛣️ Generate route
 if st.session_state.start and st.session_state.end and "path" not in st.session_state:
     orig = ox.distance.nearest_nodes(G, st.session_state.start[1], st.session_state.start[0])
     dest = ox.distance.nearest_nodes(G, st.session_state.end[1], st.session_state.end[0])
@@ -92,17 +116,16 @@ if st.session_state.start and st.session_state.end and "path" not in st.session_
             break
 
     st.session_state.path = full_path
-    st.session_state.lights = get_major_road_lights(G)
+    st.session_state.lights = get_top_signals(G)
     st.session_state.idx = 0
     st.session_state.speed = random.randint(30, 60)
     st.session_state.waiting = False
     st.session_state.trail = []
     st.session_state.done = False
     st.session_state.suggestion = ""
+    st.success("✅ Route ready! Click ➡️ Next Step to start")
 
-    st.success("✅ Route ready! Click ➡️ Next Step to start.")
-
-# Step simulation
+# 🚗 Manual Step Simulation
 if st.button("➡️ Next Step") and "path" in st.session_state and not st.session_state.get("done", False):
     path = st.session_state.path
     idx = st.session_state.idx
@@ -111,30 +134,31 @@ if st.button("➡️ Next Step") and "path" in st.session_state and not st.sessi
     dps = speed / 3.6
     lights = st.session_state.lights
 
-    # Traffic light logic
-    nearest = None
-    mind = 9999
-    for loc in lights:
-        dist = geodesic(pos, loc).meters
-        if dist < mind and dist < 120:
-            nearest = loc
-            mind = dist
-
-    phase = "None"
+    nearest, dist = get_nearest_light(pos, lights)
     if nearest:
         timer = lights[nearest]["timer"]
         phase = "Red" if timer < 30 else "Yellow" if timer < 35 else "Green"
-        if phase == "Red" and mind < 25:
+        time_left = (30 if phase == "Red" else 35 if phase == "Yellow" else 60) - timer
+        st.session_state.signal_info = {
+            "location": nearest,
+            "phase": phase,
+            "distance": int(dist),
+            "time_left": time_left
+        }
+
+        # Driving Suggestion
+        if phase == "Red" and dist < (dps * 2):
+            st.session_state.suggestion = f"🛑 Slow Down - Red in {int(dist)}m"
+        elif phase == "Green" and dist < (dps * 2):
+            st.session_state.suggestion = f"✅ Maintain - Green in {int(dist)}m"
+        else:
+            st.session_state.suggestion = "🚘 Drive steady"
+
+        # Stop if close to red
+        if phase == "Red" and dist < 25:
             st.session_state.waiting = True
         elif phase != "Red":
             st.session_state.waiting = False
-
-        if phase == "Red" and mind < (dps * 2):
-            st.session_state.suggestion = f"🛑 Slow Down - Red in {int(mind)}m"
-        elif phase == "Green" and mind < (dps * 2):
-            st.session_state.suggestion = f"✅ Go - Green in {int(mind)}m"
-        else:
-            st.session_state.suggestion = "🚘 Drive steady"
 
     if not st.session_state.waiting:
         steps = 1
@@ -158,22 +182,23 @@ if st.button("➡️ Next Step") and "path" in st.session_state and not st.sessi
     if len(st.session_state.trail) > 3:
         st.session_state.trail.pop(0)
 
-# Show map after step
+# 🗺️ Show map
 if "path" in st.session_state:
     path = st.session_state.path
     idx = min(st.session_state.idx, len(path)-1)
     pos = path[idx]
+    lights = st.session_state.lights
 
     m2 = folium.Map(location=pos, zoom_start=15)
     folium.PolyLine(path, color="blue", weight=3).add_to(m2)
     folium.Marker(path[0], icon=folium.Icon(color="green")).add_to(m2)
     folium.Marker(path[-1], icon=folium.Icon(color="red")).add_to(m2)
 
-    for loc, data in st.session_state.lights.items():
+    for loc, data in lights.items():
         t = data["timer"]
         ph = "Red" if t < 30 else "Yellow" if t < 35 else "Green"
         color = "red" if ph == "Red" else "orange" if ph == "Yellow" else "green"
-        folium.CircleMarker(loc, radius=5, color=color, fill=True, popup=f"{ph} [{t}s]").add_to(m2)
+        folium.CircleMarker(loc, radius=6, color=color, fill=True, popup=f"{ph} [{t}s]").add_to(m2)
 
     for tpos in st.session_state.trail:
         folium.CircleMarker(tpos, radius=3, color="purple", fill=True).add_to(m2)
@@ -181,9 +206,12 @@ if "path" in st.session_state:
     folium.Marker(pos, icon=folium.Icon(color="blue", icon="car"), popup="🚗").add_to(m2)
     st_folium(m2, height=500, width=900)
 
-    st.markdown("### 📊 Simulation Info")
+    # 🧠 Simulation Info
+    st.markdown("### 📊 Driving Info")
     st.write(f"**Speed:** {st.session_state.speed} km/h")
     st.write(f"**Advice:** {st.session_state.suggestion}")
-    st.write(f"**Stopped at Red?** {st.session_state.waiting}")
-    if st.session_state.done:
+    if st.session_state.get("signal_info"):
+        info = st.session_state.signal_info
+        st.info(f"🛑 Next Signal: **{info['phase']}**, ⏳ Time Left: **{info['time_left']}s**, 📏 Distance: **{info['distance']} m**")
+    if st.session_state.get("done"):
         st.success("✅ Trip Completed.")
