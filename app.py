@@ -128,7 +128,7 @@ if st.session_state.start and st.session_state.end and "path" not in st.session_
 # 🚗 Manual Step Simulation
 if st.button("➡️ Next Step") and "path" in st.session_state and not st.session_state.get("done", False):
     path = st.session_state.path
-    idx = st.session_state.idx
+    idx = st.session_state.get("idx", 0)
     pos = path[min(idx, len(path)-1)]
     speed = st.session_state.speed
     dps = speed / 3.6
@@ -185,7 +185,7 @@ if st.button("➡️ Next Step") and "path" in st.session_state and not st.sessi
 # 🗺️ Show map
 if "path" in st.session_state:
     path = st.session_state.path
-    idx = min(st.session_state.idx, len(path)-1)
+    idx = min(st.session_state.get("idx", 0), len(path)-1)
     pos = path[idx]
     lights = st.session_state.lights
 
