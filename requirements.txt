@@ -1,7 +1,8 @@
 streamlit
-streamlit-folium
-folium
 osmnx
-geopy
 networkx
-streamlit-autorefresh
+numpy
+pandas
+geopy
+folium
+streamlit-folium
