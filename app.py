@@ -203,6 +203,7 @@ if st.session_state.get("path"):
 
     # 🧠 Simulation Info
     st.markdown("### 📊 Driving Info")
+    speed = st.session_state.get("speed", 30)
     st.write(f"**Speed:** {speed} km/h")
     st.write(f"**Advice:** {st.session_state.get('suggestion', '')}")
     if st.session_state.get("signal_info"):
