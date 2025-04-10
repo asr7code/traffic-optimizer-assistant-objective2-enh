@@ -1,8 +1,8 @@
 streamlit
-osmnx
-networkx
-numpy
-pandas
-geopy
 folium
 streamlit-folium
+osmnx
+networkx
+geopy
+numpy
+pandas
