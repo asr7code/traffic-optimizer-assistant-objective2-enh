@@ -71,19 +71,18 @@ def get_nearest_light(pos, lights, threshold=80):
             min_dist = dist
     return nearest, min_dist if nearest else None
 
-# Reset button
+# 🔁 Reset Button
 if st.button("🔁 Reset"):
     for key in list(st.session_state.keys()):
         del st.session_state[key]
     st.experimental_rerun()
 
-# Setup clicks
+# 🗺️ Route Selection Setup
 if "clicks" not in st.session_state:
     st.session_state.clicks = []
     st.session_state.start = None
     st.session_state.end = None
 
-# Show map for selection
 st.markdown("### 🗺️ Click to Set Start & Destination")
 m = folium.Map(location=[30.73, 76.77], zoom_start=14)
 if st.session_state.get("start"):
@@ -101,7 +100,7 @@ if map_data and map_data.get("last_clicked"):
         elif len(st.session_state.clicks) == 2:
             st.session_state.end = coord
 
-# Build route and initialize simulation
+# 🛣️ Route + Simulation Setup
 if st.session_state.get("start") and st.session_state.get("end") and "path" not in st.session_state:
     orig = ox.distance.nearest_nodes(G, st.session_state["start"][1], st.session_state["start"][0])
     dest = ox.distance.nearest_nodes(G, st.session_state["end"][1], st.session_state["end"][0])
@@ -124,7 +123,7 @@ if st.session_state.get("start") and st.session_state.get("end") and "path" not 
     st.session_state["trail"] = []
     st.success("✅ Route ready! Click ➡️ Next Step to begin simulation")
 
-# Simulate one step
+# 🚗 Step-by-Step Simulation
 if st.button("➡️ Next Step") and st.session_state.get("path") and not st.session_state.get("done", False):
     path = st.session_state["path"]
     idx = st.session_state.get("idx", 0)
@@ -170,14 +169,18 @@ if st.button("➡️ Next Step") and st.session_state.get("path") and not st.ses
             st.session_state["done"] = True
             st.success("🎉 Reached destination!")
 
-    for l in lights.values():
-        l["timer"] = (l["timer"] + 1) % 60
-
+    # ✅ Initialize trail list if missing
+    if "trail" not in st.session_state:
+        st.session_state["trail"] = []
     st.session_state["trail"].append(pos)
     if len(st.session_state["trail"]) > 3:
         st.session_state["trail"].pop(0)
 
-# Show map
+    # ⏳ Update all light timers
+    for l in lights.values():
+        l["timer"] = (l["timer"] + 1) % 60
+
+# 🗺️ Map Display
 if st.session_state.get("path"):
     path = st.session_state["path"]
     idx = min(st.session_state.get("idx", 0), len(path)-1)
@@ -201,7 +204,7 @@ if st.session_state.get("path"):
     folium.Marker(pos, icon=folium.Icon(color="blue", icon="car")).add_to(m2)
     st_folium(m2, height=500, width=900)
 
-    # Info Box
+    # 📊 Info Panel
     st.markdown("### 📊 Driving Info")
     st.write(f"**Speed:** {st.session_state.get('speed', 30)} km/h")
     st.write(f"**Advice:** {st.session_state.get('suggestion', '')}")
