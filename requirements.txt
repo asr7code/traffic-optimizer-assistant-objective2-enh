@@ -1,0 +1,7 @@
+streamlit
+folium
+streamlit-folium
+geopy
+osmnx==1.5.1
+networkx
+scikit-learn
