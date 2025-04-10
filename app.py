@@ -17,7 +17,7 @@ def load_graph():
 
 G = load_graph()
 
-# Dummy traffic lights at known intersections
+# Dummy traffic lights
 intersections = {
     "ISBT Sector 43": (30.7165, 76.7656),
     "Madhya Marg & Jan Marg": (30.7415, 76.7680),
@@ -28,7 +28,6 @@ intersections = {
 
 # Signal cycle config
 green_start = 35
-green_end = 59
 cycle_duration = 60
 
 # Sidebar input
@@ -38,13 +37,13 @@ start_lon = st.sidebar.number_input("Start Longitude", value=76.7651, format="%.
 end_lat = st.sidebar.number_input("Destination Latitude", value=30.7165, format="%.5f")
 end_lon = st.sidebar.number_input("Destination Longitude", value=76.7656, format="%.5f")
 
+# Start button
 if st.sidebar.button("▶️ Start Simulation"):
     orig_node = ox.distance.nearest_nodes(G, start_lon, start_lat)
     dest_node = ox.distance.nearest_nodes(G, end_lon, end_lat)
     route = nx.shortest_path(G, orig_node, dest_node, weight='length')
     route_coords = [(G.nodes[n]['y'], G.nodes[n]['x']) for n in route]
 
-    # Session states
     st.session_state.route = route_coords
     st.session_state.index = 0
     st.session_state.speed = np.random.randint(30, 61)  # km/h
@@ -52,7 +51,7 @@ if st.sidebar.button("▶️ Start Simulation"):
     st.session_state.waiting = False
     st.session_state.simulation_running = True
 
-# Simulation logic
+# ✅ Move rerun logic BEFORE output
 if st.session_state.get("simulation_running", False):
     route_coords = st.session_state.route
     index = st.session_state.index
@@ -66,19 +65,13 @@ if st.session_state.get("simulation_running", False):
     eta = distance / speed_mps
     arrival_cycle = (time_in_cycle + eta) % cycle_duration
 
-    if arrival_cycle < 30:
-        phase = "Red"
-    elif arrival_cycle < 35:
-        phase = "Yellow"
-    else:
-        phase = "Green"
+    # Traffic light logic
+    phase = "Red" if arrival_cycle < 30 else "Yellow" if arrival_cycle < 35 else "Green"
 
-    # Car stops at red signal
+    # Red light stop
     if phase == "Red" and distance < 50:
         st.session_state.waiting = True
-        st.warning("🚦 Red light ahead. Car is waiting...")
     elif st.session_state.waiting and phase != "Red":
-        st.success("🟢 Green light! Car resumed.")
         st.session_state.waiting = False
 
     # Adjust speed
@@ -91,25 +84,22 @@ if st.session_state.get("simulation_running", False):
         return 25
 
     new_speed = suggest_speed(distance, time_in_cycle)
-    if new_speed != speed:
-        st.session_state.speed = new_speed
-        st.info(f"⚙️ Speed adjusted to {new_speed} km/h")
+    st.session_state.speed = new_speed
 
     # Move car if not waiting
     if not st.session_state.waiting:
         st.session_state.index += 1
         if st.session_state.index >= len(route_coords) - 1:
-            st.success("✅ Destination reached!")
             st.session_state.simulation_running = False
 
-    # Update signal time
+    # Update timer
     st.session_state.time = (st.session_state.time + 1) % cycle_duration
 
-    # 🕒 Delay and rerun BEFORE rendering output
+    # 🔁 Delay + rerun BEFORE rendering anything
     time.sleep(1)
     st.experimental_rerun()
 
-# ⬇️ After rerun or when not running — show map and info
+# 🌍 Draw map only when not rerunning
 if st.session_state.get("route"):
     route_coords = st.session_state.route
     index = min(st.session_state.index, len(route_coords) - 1)
@@ -119,14 +109,13 @@ if st.session_state.get("route"):
     folium.PolyLine(route_coords, color="blue", weight=5).add_to(m)
     folium.Marker(route_coords[0], icon=folium.Icon(color="green"), popup="Start").add_to(m)
     folium.Marker(route_coords[-1], icon=folium.Icon(color="red"), popup="Destination").add_to(m)
-
     for name, loc in intersections.items():
         folium.Marker(loc, icon=folium.Icon(color="orange", icon="exclamation-sign"), popup=name).add_to(m)
-
     folium.Marker(current_pos, icon=folium.Icon(color="purple", icon="car"), popup="🚗 Car").add_to(m)
+
     st_data = st_folium(m, height=500, width=900)
 
-    st.markdown("### 📊 Simulation Status")
+    st.markdown("### 📊 Simulation Info")
     st.write(f"**Current Position:** `{current_pos}`")
     st.write(f"**Speed:** `{st.session_state.speed} km/h`")
     st.write(f"**Signal Time in Cycle:** `{st.session_state.time} s`")
