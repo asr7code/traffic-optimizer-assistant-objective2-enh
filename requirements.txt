@@ -1,7 +1,6 @@
 streamlit
 folium
 streamlit-folium
-geopy
-osmnx==1.5.1
+osmnx
 networkx
-scikit-learn
+geopy
