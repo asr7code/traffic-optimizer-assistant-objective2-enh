@@ -1,6 +1,7 @@
 streamlit
-folium
 streamlit-folium
+folium
 osmnx
-networkx
 geopy
+networkx
+streamlit-autorefresh
