@@ -9,9 +9,8 @@ import numpy as np
 import random
 
 st.set_page_config(layout="wide")
-st.title("🚦 Chandigarh Traffic Assistant – Optimized Major Road Lights")
+st.title("🚦 Chandigarh Traffic Assistant – Map Click Version")
 
-# Auto-refresh every second (only if simulation started)
 if st.session_state.get("simulation_started", False):
     st_autorefresh(interval=1000, limit=None, key="tick")
 
@@ -21,7 +20,7 @@ def load_graph():
 
 G = load_graph()
 
-# ✅ Only intersections with major roads
+# ✅ Major-road intersections only
 def get_major_road_intersections(G):
     major_types = {"primary", "secondary", "trunk", "motorway"}
     lights = {}
@@ -36,10 +35,7 @@ def get_major_road_intersections(G):
                     edge = data[key]
                     if 'highway' in edge:
                         hw = edge['highway']
-                        if isinstance(hw, list):
-                            tags += hw
-                        else:
-                            tags.append(hw)
+                        tags += hw if isinstance(hw, list) else [hw]
 
             if any(tag in major_types for tag in tags):
                 y, x = G.nodes[node]['y'], G.nodes[node]['x']
@@ -51,7 +47,6 @@ def get_major_road_intersections(G):
 
     return lights
 
-# Interpolate path lightly
 def interpolate_points(p1, p2, spacing=15):
     distance = geodesic(p1, p2).meters
     if distance < spacing:
@@ -61,48 +56,66 @@ def interpolate_points(p1, p2, spacing=15):
     lons = np.linspace(p1[1], p2[1], num=num_points)
     return list(zip(lats, lons))
 
-# Sidebar Inputs
-st.sidebar.header("Step 1: Route Coordinates")
-start_lat = st.sidebar.number_input("Start Latitude", value=30.7270)
-start_lon = st.sidebar.number_input("Start Longitude", value=76.7651)
-end_lat = st.sidebar.number_input("End Latitude", value=30.7165)
-end_lon = st.sidebar.number_input("End Longitude", value=76.7656)
+# 🗺️ Map for selecting start and end
+if "clicks" not in st.session_state:
+    st.session_state.clicks = []
+    st.session_state.start = None
+    st.session_state.end = None
 
-if st.sidebar.button("📍 Set Route"):
-    st.session_state.start = (start_lat, start_lon)
-    st.session_state.end = (end_lat, end_lon)
-    st.success("✅ Coordinates set.")
+st.markdown("### 🗺️ Click once for Start, twice for Destination")
+m = folium.Map(location=[30.73, 76.77], zoom_start=14)
 
-# Step 2: Generate path
-if st.sidebar.button("🛣️ Generate Path"):
-    if "start" in st.session_state and "end" in st.session_state:
-        orig = ox.distance.nearest_nodes(G, st.session_state.start[1], st.session_state.start[0])
-        dest = ox.distance.nearest_nodes(G, st.session_state.end[1], st.session_state.end[0])
-        route = nx.shortest_path(G, orig, dest, weight="length")
-        raw_coords = [(G.nodes[n]['y'], G.nodes[n]['x']) for n in route]
+# Add click markers
+if st.session_state.start:
+    folium.Marker(st.session_state.start, icon=folium.Icon(color="green"), popup="Start").add_to(m)
+if st.session_state.end:
+    folium.Marker(st.session_state.end, icon=folium.Icon(color="red"), popup="End").add_to(m)
 
-        full_path = []
-        for i in range(len(raw_coords) - 1):
-            full_path += interpolate_points(raw_coords[i], raw_coords[i + 1])
-            if len(full_path) > 300:
-                break
+# Show current route path
+if "path" in st.session_state:
+    folium.PolyLine(st.session_state.path, color="blue", weight=3).add_to(m)
 
-        st.session_state.path = full_path
-        st.session_state.intersections = get_major_road_intersections(G)
-        st.session_state.pos_idx = 0
-        st.success(f"✅ Route ready with {len(st.session_state.intersections)} smart signals.")
+# Draw map and capture click
+map_data = st_folium(m, height=450, width=900)
 
-# Step 3: Start simulation
-if st.sidebar.button("🚦 Start Simulation"):
-    if "path" in st.session_state:
-        st.session_state.simulation_started = True
-        st.session_state.speed = random.randint(30, 50)
-        st.session_state.waiting = False
-        st.session_state.trail = []
-        st.session_state.completed = False
-        st.success("🚗 Simulation running...")
+if map_data and map_data.get("last_clicked"):
+    latlng = map_data["last_clicked"]
+    coord = (latlng["lat"], latlng["lng"])
+    if len(st.session_state.clicks) < 2:
+        st.session_state.clicks.append(coord)
+        if len(st.session_state.clicks) == 1:
+            st.session_state.start = coord
+        elif len(st.session_state.clicks) == 2:
+            st.session_state.end = coord
 
-# Simulation run
+# Generate path after both points set
+if st.session_state.start and st.session_state.end and "path" not in st.session_state:
+    orig = ox.distance.nearest_nodes(G, st.session_state.start[1], st.session_state.start[0])
+    dest = ox.distance.nearest_nodes(G, st.session_state.end[1], st.session_state.end[0])
+    route = nx.shortest_path(G, orig, dest, weight="length")
+    raw_coords = [(G.nodes[n]['y'], G.nodes[n]['x']) for n in route]
+
+    full_path = []
+    for i in range(len(raw_coords) - 1):
+        full_path += interpolate_points(raw_coords[i], raw_coords[i + 1])
+        if len(full_path) > 300:
+            break
+
+    st.session_state.path = full_path
+    st.session_state.intersections = get_major_road_intersections(G)
+    st.session_state.pos_idx = 0
+    st.success("✅ Route generated!")
+
+# Button to start simulation
+if st.button("🚦 Start Simulation") and "path" in st.session_state:
+    st.session_state.simulation_started = True
+    st.session_state.speed = random.randint(30, 50)
+    st.session_state.waiting = False
+    st.session_state.trail = []
+    st.session_state.completed = False
+    st.success("🎉 Simulation started")
+
+# Simulation logic
 if st.session_state.get("simulation_started", False) and not st.session_state.get("completed", False):
     path = st.session_state.path
     idx = st.session_state.pos_idx
@@ -148,34 +161,29 @@ if st.session_state.get("simulation_started", False) and not st.session_state.ge
     if len(st.session_state.trail) > 3:
         st.session_state.trail.pop(0)
 
-# Map view
-if "path" in st.session_state:
-    path = st.session_state.path
-    idx = min(st.session_state.pos_idx, len(path) - 1)
-    pos = path[idx]
-
-    m = folium.Map(location=pos, zoom_start=15)
-    folium.PolyLine(path, color="blue", weight=3).add_to(m)
-    folium.Marker(path[0], icon=folium.Icon(color="green"), popup="Start").add_to(m)
-    folium.Marker(path[-1], icon=folium.Icon(color="red"), popup="End").add_to(m)
+    # Redraw map
+    m2 = folium.Map(location=pos, zoom_start=15)
+    folium.PolyLine(st.session_state.path, color="blue", weight=3).add_to(m2)
+    folium.Marker(st.session_state.path[0], icon=folium.Icon(color="green"), popup="Start").add_to(m2)
+    folium.Marker(st.session_state.path[-1], icon=folium.Icon(color="red"), popup="End").add_to(m2)
 
     for loc, data in st.session_state.intersections.items():
         t = data["timer"]
         phase = "Red" if t < 30 else "Yellow" if t < 35 else "Green"
         color = "red" if phase == "Red" else "orange" if phase == "Yellow" else "green"
         folium.CircleMarker(loc, radius=6, color=color, fill=True, fill_opacity=0.8,
-                            popup=f"{phase} [{t}s]").add_to(m)
+                            popup=f"{phase} [{t}s]").add_to(m2)
 
     for tpos in st.session_state.trail:
-        folium.CircleMarker(tpos, radius=3, color="purple", fill=True, fill_opacity=0.5).add_to(m)
+        folium.CircleMarker(tpos, radius=3, color="purple", fill=True, fill_opacity=0.5).add_to(m2)
 
-    folium.Marker(pos, icon=folium.Icon(color="blue", icon="car"), popup="🚗").add_to(m)
-    st_folium(m, height=500, width=900)
+    folium.Marker(pos, icon=folium.Icon(color="blue", icon="car"), popup="🚗").add_to(m2)
+    st_folium(m2, height=500, width=900)
 
     st.markdown("### 📊 Simulation Info")
     st.write(f"**Position:** {pos}")
-    st.write(f"**Speed:** {st.session_state.get('speed')} km/h")
-    st.write(f"**Waiting:** {st.session_state.get('waiting')}")
-    st.write(f"**Signal Phase:** {phase}")
+    st.write(f"**Speed:** {speed} km/h")
+    st.write(f"**Waiting:** {st.session_state.waiting}")
+    st.write(f"**Light Phase:** {phase}")
     if st.session_state.get("completed"):
-        st.success("🎉 Destination reached successfully.")
+        st.success("✅ Destination reached successfully.")
