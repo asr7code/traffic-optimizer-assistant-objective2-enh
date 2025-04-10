@@ -130,7 +130,7 @@ if st.button("➡️ Next Step") and "path" in st.session_state and not st.sessi
     path = st.session_state.path
     idx = st.session_state.get("idx", 0)
     pos = path[min(idx, len(path)-1)]
-    speed = st.session_state.speed
+    speed = st.session_state.get("speed", 30)
     dps = speed / 3.6
     lights = st.session_state.lights
 
