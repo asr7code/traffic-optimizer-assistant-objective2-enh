@@ -8,7 +8,7 @@ import numpy as np
 import random
 
 st.set_page_config(layout="wide")
-st.title("🚦 Traffic Optimizer Assistant – Smart Signal Simulation")
+st.title("🚦 Traffic Optimizer Assistant – Objective 2 Simulator")
 
 @st.cache_resource
 def load_graph():
@@ -59,7 +59,7 @@ def interpolate_points(p1, p2, spacing=15):
     lons = np.linspace(p1[1], p2[1], points)
     return list(zip(lats, lons))
 
-def get_nearest_signal(pos, signals, threshold=80):
+def get_nearest_signal(pos, signals, threshold=100):
     nearest = None
     min_dist = float("inf")
     for loc in signals:
@@ -118,6 +118,7 @@ if st.session_state.get("start") and st.session_state.get("end") and "path" not 
     st.session_state.trail = []
     st.session_state.done = False
     st.session_state.suggestion = ""
+    st.session_state.signal_info = {}
     st.success("✅ Route created! Click ➡️ Next Step to begin simulation")
 
 # 🚗 Move to Next Step
@@ -135,7 +136,7 @@ if st.button("➡️ Next Step") and st.session_state.get("path") and not st.ses
         phase = "Red" if timer < 30 else "Yellow" if timer < 35 else "Green"
         time_left = (30 if phase == "Red" else 35 if phase == "Yellow" else 60) - timer
 
-        st.session_state["signal_info"] = {
+        st.session_state.signal_info = {
             "location": near_light,
             "phase": phase,
             "time_left": time_left,
@@ -143,13 +144,13 @@ if st.button("➡️ Next Step") and st.session_state.get("path") and not st.ses
         }
 
         if phase == "Red" and dist < dps * 2:
-            st.session_state.suggestion = "🛑 Slow down – Red ahead"
+            st.session_state.suggestion = "🛑 SLOW DOWN – Red light ahead!"
             st.session_state.waiting = True
         elif phase == "Green" and dist < dps * 2:
-            st.session_state.suggestion = "✅ Speed up – Green ahead"
+            st.session_state.suggestion = "✅ SPEED UP – Green light active!"
             st.session_state.waiting = False
         else:
-            st.session_state.suggestion = "🚘 Keep steady"
+            st.session_state.suggestion = "🚘 Maintain current speed"
             st.session_state.waiting = False
 
     if not st.session_state.get("waiting", False):
@@ -193,7 +194,8 @@ if st.session_state.get("path"):
         t = data["timer"]
         phase = "Red" if t < 30 else "Yellow" if t < 35 else "Green"
         color = "red" if phase == "Red" else "orange" if phase == "Yellow" else "green"
-        folium.CircleMarker(loc, radius=6, color=color, fill=True, popup=f"{phase} [{t}s]").add_to(m2)
+        popup = f"{phase} Light – {t}s"
+        folium.CircleMarker(loc, radius=6, color=color, fill=True, popup=popup).add_to(m2)
 
     for tpos in st.session_state.get("trail", []):
         folium.CircleMarker(tpos, radius=3, color="purple", fill=True).add_to(m2)
@@ -201,13 +203,15 @@ if st.session_state.get("path"):
     folium.Marker(pos, icon=folium.Icon(color="blue", icon="car")).add_to(m2)
     st_folium(m2, height=500, width=900)
 
-    # ✅ INFO Panel — Now Safe!
-    st.markdown("### 📊 Driving Info")
+    # ✅ Info Panel
+    st.markdown("### 📊 Simulation Info")
     speed = st.session_state.get("speed", 30)
     st.write(f"**Speed:** {speed} km/h")
     st.write(f"**Advice:** {st.session_state.get('suggestion', '')}")
+
     if st.session_state.get("signal_info"):
         info = st.session_state["signal_info"]
-        st.info(f"🛑 Signal: **{info['phase']}** | ⏳ Time left: {info['time_left']}s | 📏 Distance: {info['distance']} m")
+        st.info(f"🚦 Next Signal: **{info['phase']}** | ⏱️ Time left: **{info['time_left']}s** | 📏 Distance: **{info['distance']}m**")
+
     if st.session_state.get("done"):
-        st.success("✅ Trip completed.")
+        st.success("✅ Trip completed!")
